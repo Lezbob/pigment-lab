@@ -81,16 +81,46 @@ function renderStudyStrips(out){
 // Predictions remain approximate: no spectral measurements of actual paint.
 function toLab(h){let [r,g,b]=rgb(h).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);let x=(.4124564*r+.3575761*g+.1804375*b)/.95047,y=(.2126729*r+.7151522*g+.072175*b),z=(.0193339*r+.119192*g+.9503041*b)/1.08883;let f=v=>v>.008856?Math.cbrt(v):7.787*v+16/116;return [116*f(y)-16,500*(f(x)-f(y)),200*(f(y)-f(z))]}
 function mixCandidate(ids,weights,water){let ks=[0,0,0],sum=weights.reduce((a,b)=>a+b,0);ids.forEach((id,j)=>{rgb(paints.find(p=>p.id===id).hex).forEach((r,i)=>{r=clamp(r,.018,.999);ks[i]+=(weights[j]/sum)*(1-r)**2/(2*r)})});let strong=ks.map(k=>clamp(1+k-Math.sqrt(k*k+2*k),0,1)),paper=rgb($('paperColor').value);if(ids.length===1){let paint=paints.find(p=>p.id===ids[0]);if(paint.washes&&paint.washes.length===5){let pos=clamp(water,0,1)*4,lo=Math.floor(pos),hi=Math.min(4,lo+1),t=pos-lo;let a=rgb(paint.washes[lo]),b=rgb(paint.washes[hi]);return hex(a.map((v,i)=>(v*(1-t)+b[i]*t)*(1-water*.12)+paper[i]*(water*.12)))}}return hex(strong.map((v,i)=>v*(1-water)+paper[i]*water))}
-function findBestMix(){let target=$('targetHex').value;if(!validHex(target)){alert('Enter a valid target HEX first.');return}let goal=toLab(target),best={error:Infinity};const score=(ids,w,water)=>{let result=mixCandidate(ids,w,water),lab=toLab(result),error=Math.hypot(...lab.map((v,i)=>v-goal[i]));if(error<best.error)best={error,ids:[...ids],w:[...w],water,result}};
- let ids=paints.map(p=>p.id);for(let i=0;i<ids.length;i++){for(let water=0;water<=.9;water+=.05)score([ids[i]],[1],water)}
- // Pair search across broad ratio and dilution ranges.
- for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++)for(let t=.1;t<1;t+=.1)for(let water=0;water<=.85;water+=.1)score([ids[i],ids[j]],[t,1-t],water);
- // Refine around the strongest candidates using reproducible pseudo-random search.
- let seed=41893;const rand=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296};
- let anchor=[...best.ids];for(let k=0;k<9000;k++){let combo=k<3500?anchor:[ids[Math.floor(rand()*ids.length)],ids[Math.floor(rand()*ids.length)],ids[Math.floor(rand()*ids.length)]];combo=[...new Set(combo)];let weights=combo.map(()=>.05+rand()),water=rand()*.92;score(combo,weights,water)}
- // Local refinement of the best combination.
- for(let k=0;k<3500;k++){let w=best.w.map(v=>Math.max(.005,v+(rand()-.5)*(.35*(1-k/3500)+.01))),water=clamp(best.water+(rand()-.5)*(.2*(1-k/3500)+.01),0,.95);score(best.ids,w,water)}
- chosen=best.ids;let total=best.w.reduce((a,b)=>a+b,0);ratios={};best.ids.forEach((id,i)=>ratios[id]=+(best.w[i]/total*10).toFixed(2));$('water').value=Math.round(best.water*100);renderPalette();renderIngredients();update();$('matchStatus').textContent=`Suggested starting recipe · predicted ${best.result} · approximate Lab difference ${best.error.toFixed(1)}. Test with real paint and adjust.`;document.querySelector('#ingredients').scrollIntoView({behavior:'smooth',block:'center'});
+function findBestMix(){
+ const target=$('targetHex').value.trim();
+ if(!validHex(target)){alert('Enter a valid target HEX first.');return;}
+ const ids=paints.filter(p=>p&&p.id&&validHex(p.hex)).map(p=>p.id);
+ if(!ids.length){$('matchStatus').textContent='Add paints to your palette before finding a mix.';return;}
+ const button=$('autoMatch');button.disabled=true;
+ $('matchStatus').textContent='Finding your watercolor recipe…';
+ // Allow the status to render before searching, instead of freezing the click.
+ setTimeout(()=>{
+  try{
+   const goal=toLab(target),best={error:Infinity};
+   const score=(mixIds,weights,water)=>{
+    const result=mixCandidate(mixIds,weights,water);
+    const lab=toLab(result),error=Math.hypot(...lab.map((v,i)=>v-goal[i]));
+    if(Number.isFinite(error)&&error<best.error){best.error=error;best.ids=[...mixIds];best.w=[...weights];best.water=water;best.result=result;}
+   };
+   for(let i=0;i<ids.length;i++)for(let water=0;water<=.95;water+=.05)score([ids[i]],[1],water);
+   for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++)for(let t=.1;t<1;t+=.1)for(let water=0;water<=.9;water+=.1)score([ids[i],ids[j]],[t,1-t],water);
+   let seed=41893;const rand=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296};
+   const anchor=[...best.ids];
+   for(let k=0;k<3000;k++){
+    let combo=k<1200?anchor:[ids[Math.floor(rand()*ids.length)],ids[Math.floor(rand()*ids.length)],ids[Math.floor(rand()*ids.length)]];
+    combo=[...new Set(combo)];score(combo,combo.map(()=>.05+rand()),rand()*.95);
+   }
+   for(let k=0;k<1200;k++){
+    const w=best.w.map(v=>Math.max(.005,v+(rand()-.5)*(.25*(1-k/1200)+.01)));
+    const water=clamp(best.water+(rand()-.5)*(.16*(1-k/1200)+.01),0,.95);
+    score(best.ids,w,water);
+   }
+   if(!best.ids){throw new Error('No valid mixture could be calculated.');}
+   chosen=best.ids;
+   const total=best.w.reduce((a,b)=>a+b,0);
+   ratios={};best.ids.forEach((id,i)=>ratios[id]=Math.max(.01,+(best.w[i]/total*10).toFixed(2)));
+   $('water').value=Math.round(best.water*100);
+   renderPalette();renderIngredients();update();
+   $('matchStatus').textContent=`Suggested mix: ${best.result} · approximate color difference ${best.error.toFixed(1)}.`;
+   $('mixWash').scrollIntoView({behavior:'smooth',block:'center'});
+  }catch(error){console.error('Pigment Lab color matching:',error);$('matchStatus').textContent='Could not calculate a recipe: '+error.message;}
+  finally{button.disabled=false;}
+ },30);
 }
 $('autoMatch').onclick=findBestMix;
 function renderRecipes(){$('recipes').innerHTML=saved.length?saved.map((r,i)=>`<div class="recipe-card"><div class="d-flex gap-2 align-items-center mb-1"><i style="display:block;width:32px;height:32px;background:${r.hex};border-radius:6px;border:1px solid #ddd"></i><b>${esc(r.hex)}</b><span class="tiny muted">${esc(r.date)}</span></div><div class="tiny">${esc(r.text)}</div><div class="mt-2"><button class="btn btn-sm btn-outline-secondary" data-load="${i}">Load</button> <button class="btn btn-sm btn-outline-danger" data-delete="${i}">Delete</button></div></div>`).join(''):'<p class="tiny muted">No recipes saved yet.</p>';$('recipes').querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>{let r=saved[+b.dataset.load];chosen=r.chosen.filter(id=>paints.some(p=>p.id===id));ratios={...r.ratios};$('water').value=r.water;$('paperColor').value=r.paper;renderPalette();renderIngredients();update();window.scrollTo({top:0,behavior:'smooth'})});$('recipes').querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{saved.splice(+b.dataset.delete,1);localStorage.setItem('sf_sennelier_recipes_v1',JSON.stringify(saved));renderRecipes()})}
