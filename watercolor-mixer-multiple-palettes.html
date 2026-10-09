@@ -149,7 +149,29 @@ $('importAllPalettes').onchange=async e=>{let f=e.target.files[0];if(!f)return;t
 $('addPaint').onclick=()=>{let id=$('newPaintCode').value.trim()||String(paints.length+1),name=$('newPaintName').value.trim(),h=$('newPaintColor').value.toUpperCase();if(!name)return alert('Enter a paint name.');if(paints.some(p=>p.id===id))return alert('That paint number already exists in this palette.');paints.push({id,name,hex:h});persist();renderPalette();renderEditor();renderSamplePaints();renderSwitcher();update();$('samplePaint').value=id;renderWashSamples();$('newPaintCode').value='';$('newPaintName').value=''};
 $('removePaint').onclick=()=>{let id=$('samplePaint').value;if(!id)return;if(!confirm('Remove this paint from the active palette?'))return;paints=paints.filter(p=>p.id!==id);chosen=chosen.filter(x=>x!==id);delete ratios[id];persist();renderPalette();renderEditor();renderIngredients();renderSamplePaints();renderSwitcher();update()};
 let sampledHex=null;
-$('swatchUpload').onchange=e=>{let file=e.target.files[0];if(!file)return;let url=URL.createObjectURL(file),im=new Image();im.onload=()=>{let c=$('swatchCanvas'),scale=Math.min(1,1100/im.width,700/im.height);c.width=Math.max(1,Math.round(im.width*scale));c.height=Math.max(1,Math.round(im.height*scale));c.getContext('2d',{willReadFrequently:true}).drawImage(im,0,0,c.width,c.height);c.style.display='block';$('sampleNotice').textContent='Click a painted region to sample it.';URL.revokeObjectURL(url)};im.onerror=()=>{alert('Could not read image');URL.revokeObjectURL(url)};im.src=url};
+$('swatchUpload').onchange=e=>{
+ const file=e.target.files&&e.target.files[0];if(!file)return;
+ const notice=$('sampleNotice'),canvas=$('swatchCanvas');
+ notice.textContent='Loading '+file.name+'…';
+ const reader=new FileReader();
+ reader.onerror=()=>{notice.textContent='Could not read this file. Please select a JPG, PNG, or WebP image.';};
+ reader.onload=()=>{
+  const im=new Image();
+  im.onerror=()=>{notice.textContent='Could not open this image. Please try a JPG, PNG, or WebP file.';};
+  im.onload=()=>{
+   try{
+    const scale=Math.min(1,1100/im.naturalWidth,700/im.naturalHeight);
+    canvas.width=Math.max(1,Math.round(im.naturalWidth*scale));
+    canvas.height=Math.max(1,Math.round(im.naturalHeight*scale));
+    canvas.getContext('2d',{willReadFrequently:true}).drawImage(im,0,0,canvas.width,canvas.height);
+    canvas.hidden=false;canvas.style.display='block';
+    notice.textContent='Chart loaded: '+file.name+'. Click a painted region to sample it.';
+   }catch(err){notice.textContent='Could not display this chart: '+err.message;}
+  };
+  im.src=reader.result;
+ };
+ reader.readAsDataURL(file);
+};
 $('swatchCanvas').onclick=e=>{let c=e.currentTarget,r=c.getBoundingClientRect(),x=clamp(Math.floor((e.clientX-r.left)*c.width/r.width),0,c.width-1),y=clamp(Math.floor((e.clientY-r.top)*c.height/r.height),0,c.height-1),ctx=c.getContext('2d',{willReadFrequently:true}),data=ctx.getImageData(Math.max(0,x-2),Math.max(0,y-2),Math.min(5,c.width-Math.max(0,x-2)),Math.min(5,c.height-Math.max(0,y-2))).data;let sum=[0,0,0],n=0;for(let i=0;i<data.length;i+=4){if(data[i+3]<128)continue;for(let j=0;j<3;j++)sum[j]+=data[i+j];n++}if(!n)return;sampledHex=hex(sum.map(v=>v/n/255));$('sampleHex').textContent=sampledHex;$('samplePreview').style.background=sampledHex;$('sampleNotice').textContent='Sample '+sampledHex+' ready for '+$('samplePaint').selectedOptions[0]?.textContent};
 $('applySample').onclick=()=>{let p=paints.find(p=>p.id===$('samplePaint').value);if(!p||!sampledHex)return alert('Choose a paint and click its swatch image first.');p.hex=sampledHex;p.washes=undefined;persist();renderPalette();renderEditor();renderWashSamples();update()};
 $('addWashSample').onclick=()=>{let p=paints.find(p=>p.id===$('samplePaint').value);if(!p||!sampledHex)return alert('Choose a paint and click its swatch image first.');if(!p.washes)p.washes=[];if(p.washes.length>=5)return alert('Up to five wash samples per paint. Use the paint editor to clear/restart its wash samples.');p.washes.push(sampledHex);if(p.washes.length===1)p.hex=sampledHex;persist();renderPalette();renderEditor();renderWashSamples();update()};
@@ -225,7 +247,8 @@ newWorkingMix();
  const tools=document.createElement('details');tools.className='pl-tools';
  tools.innerHTML='<summary>⚙ My palettes, chart imports & advanced settings</summary><div class="pl-tools-body"><p class="pl-note">Open this only when adding paints, importing a chart or managing your palette.</p></div>';
  const body=tools.querySelector('.pl-tools-body');
- [manager,importer,reference,info].forEach(c=>{if(c)body.append(c)});
+ [manager,reference,info].forEach(c=>{if(c)body.append(c)});
+ if(importer){top.after(importer);importer.style.display="block";}
  work.after(tools);
  if(paints){const h=paints.querySelector('h2');if(h)h.innerHTML='① Choose your paint colors <span class="muted tiny">(up to 5)</span>'}
  if(proportions){const h=proportions.querySelector('h2');if(h)h.textContent='② Adjust the mix'}
