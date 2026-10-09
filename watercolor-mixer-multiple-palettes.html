@@ -138,7 +138,7 @@ const saveLibrary=()=>{try{localStorage.setItem(MANAGER_KEY,JSON.stringify(libra
 const currentPalette=()=>library.palettes[library.active];
 function switchPalette(id){if(!library.palettes[id])return;library.active=id;paints=structuredClone(currentPalette().paints);chosen=[];ratios={};persist=()=>{currentPalette().paints=structuredClone(paints);saveLibrary()};renderPalette();renderEditor();renderIngredients();renderSamplePaints();renderSwitcher();update();saveLibrary();}
 function renderSwitcher(){$('paletteSwitcher').innerHTML=Object.entries(library.palettes).map(([id,p])=>`<option value="${esc(id)}">${esc(p.name)} (${p.paints.length} paints)</option>`).join('');$('paletteSwitcher').value=library.active;}
-function renderSamplePaints(){let prev=$('samplePaint').value;$('samplePaint').innerHTML=paints.map(p=>`<option value="${esc(p.id)}">${esc(p.id)} · ${esc(p.name)}</option>`).join('');if(paints.some(p=>p.id===prev))$('samplePaint').value=prev;renderWashSamples();}
+function renderSamplePaints(){let prev=$('samplePaint').value;$('samplePaint').innerHTML=paints.length?paints.map(p=>`<option value="${esc(p.id)}">${esc(p.id)} · ${esc(p.name)}</option>`).join(''):'<option value="">Add a paint below to assign samples</option>';if(paints.some(p=>p.id===prev))$('samplePaint').value=prev;renderWashSamples();}
 function renderWashSamples(){let p=paints.find(p=>p.id===$('samplePaint').value);$('washSamples').innerHTML=(p?.washes||[]).map((h,i)=>`<span title="Wash ${i+1}: ${h}" style="display:inline-block;width:35px;height:32px;background:${h};border:1px solid #aaa;border-radius:4px"></span>`).join('')||'<span class="tiny muted">No wash samples yet</span>';}
 $('paletteSwitcher').onchange=e=>switchPalette(e.target.value);
 $('newPalette').onclick=()=>{let name=prompt('Name your new palette (for example: Travel watercolors)');if(!name?.trim())return;let id='p_'+Date.now();library.palettes[id]={name:name.trim(),paints:[],original:[]};switchPalette(id)};
@@ -165,7 +165,7 @@ $('swatchUpload').onchange=e=>{
     canvas.height=Math.max(1,Math.round(im.naturalHeight*scale));
     canvas.getContext('2d',{willReadFrequently:true}).drawImage(im,0,0,canvas.width,canvas.height);
     canvas.hidden=false;canvas.style.display='block';
-    notice.textContent='Chart loaded: '+file.name+'. Click a painted region to sample it.';
+    notice.textContent='Chart loaded: '+file.name+'. Click a painted region to sample it.'+(paints.length?'':' Add a paint below when you want to save a sampled color.');
    }catch(err){notice.textContent='Could not display this chart: '+err.message;}
   };
   im.src=reader.result;
@@ -173,8 +173,8 @@ $('swatchUpload').onchange=e=>{
  reader.readAsDataURL(file);
 };
 $('swatchCanvas').onclick=e=>{let c=e.currentTarget,r=c.getBoundingClientRect(),x=clamp(Math.floor((e.clientX-r.left)*c.width/r.width),0,c.width-1),y=clamp(Math.floor((e.clientY-r.top)*c.height/r.height),0,c.height-1),ctx=c.getContext('2d',{willReadFrequently:true}),data=ctx.getImageData(Math.max(0,x-2),Math.max(0,y-2),Math.min(5,c.width-Math.max(0,x-2)),Math.min(5,c.height-Math.max(0,y-2))).data;let sum=[0,0,0],n=0;for(let i=0;i<data.length;i+=4){if(data[i+3]<128)continue;for(let j=0;j<3;j++)sum[j]+=data[i+j];n++}if(!n)return;sampledHex=hex(sum.map(v=>v/n/255));$('sampleHex').textContent=sampledHex;$('samplePreview').style.background=sampledHex;$('sampleNotice').textContent='Sample '+sampledHex+' ready for '+$('samplePaint').selectedOptions[0]?.textContent};
-$('applySample').onclick=()=>{let p=paints.find(p=>p.id===$('samplePaint').value);if(!p||!sampledHex)return alert('Choose a paint and click its swatch image first.');p.hex=sampledHex;p.washes=undefined;persist();renderPalette();renderEditor();renderWashSamples();update()};
-$('addWashSample').onclick=()=>{let p=paints.find(p=>p.id===$('samplePaint').value);if(!p||!sampledHex)return alert('Choose a paint and click its swatch image first.');if(!p.washes)p.washes=[];if(p.washes.length>=5)return alert('Up to five wash samples per paint. Use the paint editor to clear/restart its wash samples.');p.washes.push(sampledHex);if(p.washes.length===1)p.hex=sampledHex;persist();renderPalette();renderEditor();renderWashSamples();update()};
+$('applySample').onclick=()=>{let p=paints.find(p=>p.id===$('samplePaint').value);if(!sampledHex){$('sampleNotice').textContent='Upload a chart, then click a painted area to sample its color.';return;}if(!p){$('sampleNotice').textContent='Sample captured. Add a paint below to assign this color.';$('paletteManager').scrollIntoView({behavior:'smooth',block:'start'});return;}p.hex=sampledHex;p.washes=undefined;persist();renderPalette();renderEditor();renderWashSamples();update()};
+$('addWashSample').onclick=()=>{let p=paints.find(p=>p.id===$('samplePaint').value);if(!sampledHex){$('sampleNotice').textContent='Upload a chart, then click a painted area to sample its color.';return;}if(!p){$('sampleNotice').textContent='Sample captured. Add a paint below to assign this color.';$('paletteManager').scrollIntoView({behavior:'smooth',block:'start'});return;}if(!p.washes)p.washes=[];if(p.washes.length>=5)return alert('Up to five wash samples per paint. Use the paint editor to clear/restart its wash samples.');p.washes.push(sampledHex);if(p.washes.length===1)p.hex=sampledHex;persist();renderPalette();renderEditor();renderWashSamples();update()};
 $('samplePaint').onchange=renderWashSamples;
 // Update original buttons to act on active palette rather than the fixed Sennelier list.
 $('resetPalette').onclick=()=>{if(confirm('Restore the original colors of this palette?')){paints=structuredClone(currentPalette().original||[]);persist();chosen=[];ratios={};renderPalette();renderEditor();renderIngredients();renderSamplePaints();update()}};
