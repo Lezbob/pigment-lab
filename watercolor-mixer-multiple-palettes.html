@@ -225,7 +225,8 @@ newWorkingMix();
  const tools=document.createElement('details');tools.className='pl-tools';
  tools.innerHTML='<summary>⚙ My palettes, chart imports & advanced settings</summary><div class="pl-tools-body"><p class="pl-note">Open this only when adding paints, importing a chart or managing your palette.</p></div>';
  const body=tools.querySelector('.pl-tools-body');
- [manager,importer,reference,info].forEach(c=>{if(c)body.append(c)});
+ [manager,reference,info].forEach(c=>{if(c)body.append(c)});
+ if(importer){top.after(importer);importer.style.display="block";}
  work.after(tools);
  if(paints){const h=paints.querySelector('h2');if(h)h.innerHTML='① Choose your paint colors <span class="muted tiny">(up to 5)</span>'}
  if(proportions){const h=proportions.querySelector('h2');if(h)h.textContent='② Adjust the mix'}
